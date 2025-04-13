@@ -9,7 +9,7 @@ const router = express.Router();
  * @swagger
  * /api/auth/register:
  *   post:
- *     summary: Register a new user
+ *     summary: Register a new user (as admin)
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -48,11 +48,28 @@ router.post('/register', async (req, res) => {
       username,
       email,
       password: hashedPassword,
+      isAdmin: false, // Ensure all new users are not admins
     });
 
     await newUser.save();
 
-    res.status(201).json({ message: 'User registered successfully' });
+    // Generate token after registration to auto-login
+    const token = jwt.sign(
+      { id: newUser._id, username: newUser.username, isAdmin: newUser.isAdmin },
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+
+    res.status(201).json({ 
+      message: 'User registered successfully',
+      token,
+      user: {
+        id: newUser._id,
+        username: newUser.username,
+        email: newUser.email,
+        isAdmin: newUser.isAdmin
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -98,7 +115,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
     const token = jwt.sign(
-      { id: user._id, username: user.username },
+      { id: user._id, username: user.username, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
       { expiresIn: '1d' }
     );
@@ -109,6 +126,7 @@ router.post('/login', async (req, res) => {
         id: user._id,
         username: user.username,
         email: user.email,
+        isAdmin: user.isAdmin
       },
     });
   } catch (error) {

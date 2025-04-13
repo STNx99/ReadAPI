@@ -10,6 +10,9 @@ const bookRoutes = require('./routes/book.routes');
 const categoryRoutes = require('./routes/category.routes');
 const reviewRoutes = require('./routes/review.routes');
 const savedBookRoutes = require('./routes/savedBook.routes');
+const cartRoutes = require('./routes/cart.routes');
+const orderRoutes = require('./routes/order.routes');
+const adminRoutes = require('./routes/admin.routes');
 
 dotenv.config();
 
@@ -42,6 +45,9 @@ app.use('/api/books', bookRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/saved-books', savedBookRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/admin', adminRoutes);
 
 mongoose
   .connect(process.env.MONGODB_URI, {

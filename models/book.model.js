@@ -27,6 +27,9 @@ const mongoose = require('mongoose');
  *           type: string
  *           format: date
  *           description: Publication date
+ *         price:
+ *           type: number
+ *           description: Book price
  *         categories:
  *           type: array
  *           items:
@@ -38,6 +41,7 @@ const mongoose = require('mongoose');
  *         description: A novel about American society during the Roaring 20s
  *         coverImage: https://example.com/images/gatsby.jpg
  *         publishDate: 1925-04-10
+ *         price: 15.99
  *         categories: ["60d0fe4f5311236168a109ca", "60d0fe4f5311236168a109cb"]
  */
 const bookSchema = new mongoose.Schema(
@@ -58,9 +62,16 @@ const bookSchema = new mongoose.Schema(
     },
     coverImage: {
       type: String,
+      default: '',
     },
     publishDate: {
       type: Date,
+      default: Date.now,
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
     },
     categories: [
       {
@@ -72,4 +83,15 @@ const bookSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-module.exports = mongoose.model('Book', bookSchema);
+bookSchema.virtual('reviews', {
+  ref: 'Review',
+  localField: '_id',
+  foreignField: 'book',
+});
+
+bookSchema.set('toJSON', { virtuals: true });
+bookSchema.set('toObject', { virtuals: true });
+
+const Book = mongoose.model('Book', bookSchema);
+
+module.exports = Book;

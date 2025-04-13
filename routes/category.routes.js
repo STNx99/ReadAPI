@@ -1,52 +1,39 @@
 const express = require('express');
 const Category = require('../models/category.model');
+const Book = require('../models/book.model');
 const authMiddleware = require('../middleware/auth.middleware');
+const adminMiddleware = require('../middleware/admin.middleware');
 
 const router = express.Router();
 
-/**
- * @swagger
- * /api/categories:
- *   get:
- *     summary: Get all categories
- *     tags: [Categories]
- *     responses:
- *       200:
- *         description: List of categories
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Category'
- */
+// Get all categories (public access)
 router.get('/', async (req, res) => {
   try {
     const categories = await Category.find();
+    
+    // If request is from admin dashboard, include book count
+    if (req.query.admin) {
+      // Add book count for each category
+      const categoriesWithCounts = await Promise.all(
+        categories.map(async (category) => {
+          const bookCount = await Book.countDocuments({ categories: category._id });
+          return {
+            ...category.toObject(),
+            bookCount
+          };
+        })
+      );
+      
+      return res.status(200).json(categoriesWithCounts);
+    }
+    
     res.status(200).json(categories);
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Error retrieving categories', error: error.message });
   }
 });
 
-/**
- * @swagger
- * /api/categories/{id}:
- *   get:
- *     summary: Get a category by ID
- *     tags: [Categories]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Category details
- *       404:
- *         description: Category not found
- */
+// Get category by ID (public access)
 router.get('/:id', async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
@@ -57,33 +44,30 @@ router.get('/:id', async (req, res) => {
     
     res.status(200).json(category);
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Error retrieving category', error: error.message });
   }
 });
 
-/**
- * @swagger
- * /api/categories:
- *   post:
- *     summary: Create a new category
- *     tags: [Categories]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/Category'
- *     responses:
- *       201:
- *         description: Category created successfully
- *       400:
- *         description: Invalid input
- */
-router.post('/', authMiddleware, async (req, res) => {
+// Create category (admin only)
+router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const newCategory = new Category(req.body);
+    const { name, description } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ message: 'Category name is required' });
+    }
+    
+    // Check if category with same name exists
+    const existingCategory = await Category.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') } });
+    if (existingCategory) {
+      return res.status(400).json({ message: 'Category with this name already exists' });
+    }
+    
+    const newCategory = new Category({
+      name,
+      description
+    });
+    
     const savedCategory = await newCategory.save();
     res.status(201).json(savedCategory);
   } catch (error) {
@@ -91,37 +75,28 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * @swagger
- * /api/categories/{id}:
- *   put:
- *     summary: Update a category
- *     tags: [Categories]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/Category'
- *     responses:
- *       200:
- *         description: Category updated successfully
- *       404:
- *         description: Category not found
- */
-router.put('/:id', authMiddleware, async (req, res) => {
+// Update category (admin only)
+router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    const { name, description } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ message: 'Category name is required' });
+    }
+    
+    // Check if another category with same name exists
+    const existingCategory = await Category.findOne({ 
+      name: { $regex: new RegExp(`^${name}$`, 'i') },
+      _id: { $ne: req.params.id }
+    });
+    
+    if (existingCategory) {
+      return res.status(400).json({ message: 'Another category with this name already exists' });
+    }
+    
     const updatedCategory = await Category.findByIdAndUpdate(
       req.params.id,
-      { $set: req.body },
+      { name, description },
       { new: true }
     );
     
@@ -135,35 +110,31 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * @swagger
- * /api/categories/{id}:
- *   delete:
- *     summary: Delete a category
- *     tags: [Categories]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Category deleted successfully
- *       404:
- *         description: Category not found
- */
-router.delete('/:id', authMiddleware, async (req, res) => {
+// Delete category (admin only)
+router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
+    // Check if books are using this category
+    const booksWithCategory = await Book.countDocuments({ categories: req.params.id });
+    
+    if (booksWithCategory > 0) {
+      return res.status(400).json({ 
+        message: `Cannot delete this category as it is used by ${booksWithCategory} books. Please reassign those books first.` 
+      });
+    }
+    
     const deletedCategory = await Category.findByIdAndDelete(req.params.id);
     
     if (!deletedCategory) {
       return res.status(404).json({ message: 'Category not found' });
     }
     
-    res.status(200).json({ message: 'Category deleted successfully' });
+    res.status(200).json({ 
+      message: 'Category deleted successfully',
+      deletedCategory: {
+        id: deletedCategory._id,
+        name: deletedCategory.name
+      }
+    });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting category', error: error.message });
   }
